@@ -1,14 +1,21 @@
 from fastapi import APIRouter, HTTPException
 from passlib.context import CryptContext
 from app.database import get_cursor
+from jose import jwt, JWTError
+from datetime import datetime, timedelta
 
 router = APIRouter()
 
-# 🔥 SAFE SCHEME
+# 🔐 PASSWORD HASHING (SAFE)
 pwd_context = CryptContext(
     schemes=["bcrypt_sha256"],
     deprecated="auto"
 )
+
+# 🔑 JWT CONFIG
+SECRET_KEY = "CHANGE_THIS_SECRET_KEY"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 # ---------------- PASSWORD UTILS ----------------
 def validate_password(password: str):
@@ -23,6 +30,15 @@ def hash_password(password: str):
 
 def verify_password(password: str, hashed: str):
     return pwd_context.verify(password, hashed)
+
+# ---------------- TOKEN UTILS ----------------
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(
+        minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+    )
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 # ---------------- REGISTER ----------------
 @router.post("/register")
@@ -57,6 +73,7 @@ def register_user(
 
     conn.commit()
     conn.close()
+
     return {"message": "User registered successfully"}
 
 # ---------------- LOGIN ----------------
@@ -66,7 +83,7 @@ def login_user(email: str, password: str):
 
     cur.execute(
         """
-        SELECT id, name, email, password, role
+        SELECT id, password, role
         FROM users
         WHERE email = %s
         """,
@@ -81,12 +98,12 @@ def login_user(email: str, password: str):
             detail="Invalid email or password"
         )
 
+    access_token = create_access_token({
+        "user_id": user["id"],
+        "role": user["role"]
+    })
+
     return {
-        "message": "Login successful",
-        "user": {
-            "id": user["id"],
-            "name": user["name"],
-            "email": user["email"],
-            "role": user["role"]
-        }
+        "access_token": access_token,
+        "token_type": "bearer"
     }

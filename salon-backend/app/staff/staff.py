@@ -1,20 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.database import get_cursor
+from app.auth.utils import get_current_user
 
 router = APIRouter()
 
-# ---------------- ROLE CHECK ----------------
-def check_admin_permission(user_id: int, cur):
-    cur.execute(
-        "SELECT role FROM users WHERE id = %s",
-        (user_id,)
-    )
-    user = cur.fetchone()
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    if user["role"] != "ADMIN":
+# ---------------- ADMIN ROLE CHECK ----------------
+def check_admin_permission(current_user: dict):
+    if current_user["role"] != "ADMIN":
         raise HTTPException(
             status_code=403,
             detail="Only admin can perform this action"
@@ -23,21 +15,21 @@ def check_admin_permission(user_id: int, cur):
 # ---------------- CREATE ----------------
 @router.post("/")
 def create_staff(
-    user_id: int,    # 👈 who is creating staff
     name: str,
-    role: str
+    role: str,
+    current_user: dict = Depends(get_current_user)
 ):
+    # 🔐 admin check via token
+    check_admin_permission(current_user)
+
     conn, cur = get_cursor()
-
-    # 🔐 admin check
-    check_admin_permission(user_id, cur)
-
     cur.execute(
         "INSERT INTO staff (name, role) VALUES (%s, %s)",
         (name, role)
     )
     conn.commit()
     conn.close()
+
     return {"message": "Staff created successfully"}
 
 # ---------------- READ ----------------
@@ -69,16 +61,15 @@ def get_staff_by_id(staff_id: int):
 # ---------------- UPDATE (PUT) ----------------
 @router.put("/{staff_id}")
 def update_staff(
-    user_id: int,    # 👈 admin only
     staff_id: int,
     name: str,
-    role: str
+    role: str,
+    current_user: dict = Depends(get_current_user)
 ):
+    # 🔐 admin check via token
+    check_admin_permission(current_user)
+
     conn, cur = get_cursor()
-
-    # 🔐 admin check
-    check_admin_permission(user_id, cur)
-
     cur.execute(
         """
         UPDATE staff
@@ -99,10 +90,10 @@ def update_staff(
 # ---------------- PARTIAL UPDATE (PATCH) ----------------
 @router.patch("/{staff_id}")
 def patch_staff(
-    user_id: int,    # 👈 admin only
     staff_id: int,
     name: str = None,
-    role: str = None
+    role: str = None,
+    current_user: dict = Depends(get_current_user)
 ):
     if name is None and role is None:
         raise HTTPException(
@@ -110,10 +101,8 @@ def patch_staff(
             detail="At least one field (name or role) must be provided"
         )
 
-    conn, cur = get_cursor()
-
-    # 🔐 admin check
-    check_admin_permission(user_id, cur)
+    # 🔐 admin check via token
+    check_admin_permission(current_user)
 
     fields = []
     values = []
@@ -134,6 +123,7 @@ def patch_staff(
         WHERE id = %s
     """
 
+    conn, cur = get_cursor()
     cur.execute(query, tuple(values))
 
     if cur.rowcount == 0:
@@ -147,14 +137,13 @@ def patch_staff(
 # ---------------- DELETE (SOFT DELETE) ----------------
 @router.delete("/{staff_id}")
 def delete_staff(
-    user_id: int,    # 👈 admin only
-    staff_id: int
+    staff_id: int,
+    current_user: dict = Depends(get_current_user)
 ):
+    # 🔐 admin check via token
+    check_admin_permission(current_user)
+
     conn, cur = get_cursor()
-
-    # 🔐 admin check
-    check_admin_permission(user_id, cur)
-
     cur.execute(
         """
         UPDATE staff

@@ -1,15 +1,28 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.database import get_cursor
+from app.auth.utils import get_current_user
 
 router = APIRouter()
+
+# ---------------- ADMIN ROLE CHECK ----------------
+def check_admin_permission(current_user: dict):
+    if current_user["role"] != "ADMIN":
+        raise HTTPException(
+            status_code=403,
+            detail="Only admin can perform this action"
+        )
 
 # ---------------- CREATE ----------------
 @router.post("/")
 def create_service(
     name: str,
     duration_minutes: int,
-    category: str = None
+    category: str = None,
+    current_user: dict = Depends(get_current_user)
 ):
+    # 🔐 admin only
+    check_admin_permission(current_user)
+
     conn, cur = get_cursor()
     cur.execute(
         """
@@ -20,6 +33,7 @@ def create_service(
     )
     conn.commit()
     conn.close()
+
     return {"message": "Service created successfully"}
 
 # ---------------- READ ----------------
@@ -54,8 +68,12 @@ def update_service(
     service_id: int,
     name: str,
     duration_minutes: int,
-    category: str = None
+    category: str = None,
+    current_user: dict = Depends(get_current_user)
 ):
+    # 🔐 admin only
+    check_admin_permission(current_user)
+
     conn, cur = get_cursor()
     cur.execute(
         """
@@ -82,13 +100,17 @@ def patch_service(
     service_id: int,
     name: str = None,
     duration_minutes: int = None,
-    category: str = None
+    category: str = None,
+    current_user: dict = Depends(get_current_user)
 ):
     if name is None and duration_minutes is None and category is None:
         raise HTTPException(
             status_code=400,
             detail="At least one field must be provided"
         )
+
+    # 🔐 admin only
+    check_admin_permission(current_user)
 
     fields = []
     values = []
@@ -126,7 +148,13 @@ def patch_service(
 
 # ---------------- DELETE (SOFT DELETE) ----------------
 @router.delete("/{service_id}")
-def delete_service(service_id: int):
+def delete_service(
+    service_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    # 🔐 admin only
+    check_admin_permission(current_user)
+
     conn, cur = get_cursor()
     cur.execute(
         """

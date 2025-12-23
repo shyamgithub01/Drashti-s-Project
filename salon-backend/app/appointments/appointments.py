@@ -1,10 +1,19 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.database import get_cursor
 from datetime import date
+from app.auth.utils import get_current_user
 
 router = APIRouter()
 
 VALID_STATUSES = ["BOOKED", "CONFIRMED", "COMPLETED", "CANCELLED", "NO_SHOW"]
+
+# ---------------- ROLE CHECK HELPERS ----------------
+def allow_roles(current_user: dict, allowed_roles: list):
+    if current_user["role"] not in allowed_roles:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not allowed to perform this action"
+        )
 
 # ---------------- CREATE (BOOK APPOINTMENT) ----------------
 @router.post("/")
@@ -13,8 +22,12 @@ def create_appointment(
     staff_id: int,
     service_id: int,
     appointment_date: str,
-    appointment_time: str
+    appointment_time: str,
+    current_user: dict = Depends(get_current_user)
 ):
+    # 🔐 CUSTOMER or ADMIN
+    allow_roles(current_user, ["CUSTOMER", "ADMIN"])
+
     conn, cur = get_cursor()
 
     # prevent past booking
@@ -59,7 +72,12 @@ def create_appointment(
 
 # ---------------- READ ----------------
 @router.get("/")
-def get_all_appointments():
+def get_all_appointments(
+    current_user: dict = Depends(get_current_user)
+):
+    # 🔐 ADMIN or STAFF
+    allow_roles(current_user, ["ADMIN", "STAFF"])
+
     conn, cur = get_cursor()
     cur.execute(
         """
@@ -75,7 +93,13 @@ def get_all_appointments():
     return data
 
 @router.get("/{appointment_id}")
-def get_appointment_by_id(appointment_id: int):
+def get_appointment_by_id(
+    appointment_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    # 🔐 ADMIN or STAFF
+    allow_roles(current_user, ["ADMIN", "STAFF"])
+
     conn, cur = get_cursor()
     cur.execute(
         "SELECT * FROM appointments WHERE id = %s",
@@ -89,13 +113,17 @@ def get_appointment_by_id(appointment_id: int):
 
     return appt
 
-# ---------------- FILTER (NEW) ----------------
+# ---------------- FILTER ----------------
 @router.get("/filter")
 def filter_appointments(
     appointment_date: str = None,
     staff_id: int = None,
-    status: str = None
+    status: str = None,
+    current_user: dict = Depends(get_current_user)
 ):
+    # 🔐 ADMIN or STAFF
+    allow_roles(current_user, ["ADMIN", "STAFF"])
+
     conn, cur = get_cursor()
 
     query = """
@@ -138,8 +166,12 @@ def update_appointment(
     appointment_id: int,
     appointment_date: str,
     appointment_time: str,
-    status: str
+    status: str,
+    current_user: dict = Depends(get_current_user)
 ):
+    # 🔐 ADMIN or STAFF
+    allow_roles(current_user, ["ADMIN", "STAFF"])
+
     if status not in VALID_STATUSES:
         raise HTTPException(
             status_code=400,
@@ -170,8 +202,12 @@ def update_appointment(
 @router.patch("/{appointment_id}")
 def patch_appointment(
     appointment_id: int,
-    status: str
+    status: str,
+    current_user: dict = Depends(get_current_user)
 ):
+    # 🔐 ADMIN or STAFF
+    allow_roles(current_user, ["ADMIN", "STAFF"])
+
     if status not in VALID_STATUSES:
         raise HTTPException(
             status_code=400,
@@ -198,7 +234,13 @@ def patch_appointment(
 
 # ---------------- DELETE ----------------
 @router.delete("/{appointment_id}")
-def delete_appointment(appointment_id: int):
+def delete_appointment(
+    appointment_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    # 🔐 ADMIN only
+    allow_roles(current_user, ["ADMIN"])
+
     conn, cur = get_cursor()
     cur.execute(
         "DELETE FROM appointments WHERE id = %s",
